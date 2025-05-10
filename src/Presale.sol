@@ -112,7 +112,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
     /// Vesting begins only after the cliff duration ends, which starts counting from the time of purchase.
     function purchaseTokens(uint256 _tokensToBuy) external payable whenNotPaused {
         require(block.timestamp >= presaleStartTime && block.timestamp <= presaleEndTime, "Presale not active");
-        require(_tokensToBuy >= 100 * 10**18, "Minimum contribution is 100 BLK");
+        require(_tokensToBuy >= 5 * 10**18, "Minimum purchase requirement: 5 BLK");
         require(msg.value == (_tokensToBuy * tokenPrice) / 1e18, "Incorrect ETH sent for token amount");
 
         require(tokensSold + _tokensToBuy <= MAX_TOKENS_FOR_PRESALE, "Not enough tokens left for presale");
