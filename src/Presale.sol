@@ -113,7 +113,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
     function purchaseTokens(uint256 _tokensToBuy) external payable whenNotPaused {
         require(block.timestamp >= presaleStartTime && block.timestamp <= presaleEndTime, "Presale not active");
         require(_tokensToBuy >= 100 * 10**18, "Minimum contribution is 100 BLK");
-        require(msg.value == (_tokensToBuy * tokenPrice), "Incorrect ETH sent for token amount");
+        require(msg.value == (_tokensToBuy * tokenPrice) / 1e18, "Incorrect ETH sent for token amount");
 
         require(tokensSold + _tokensToBuy <= MAX_TOKENS_FOR_PRESALE, "Not enough tokens left for presale");
         require(tokensSold + _tokensToBuy <= black.balanceOf(address(this)), "Not enough tokens available in the contract");
