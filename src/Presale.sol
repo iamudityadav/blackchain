@@ -2,42 +2,42 @@
 pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin-contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin-contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin-contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 /// @title Presale contract
 /// @notice This contract handles the presale for Black(BLK) where users can purchase tokens with ETH, and the tokens are subject to a vesting period after the presale ends.
 contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeable {
 
-    /// @dev The maximum number of tokens available for presale (300 million Black(BLK)).
+    /// @notice The maximum number of tokens available for presale (300 million Black(BLK)).
     uint256 public constant MAX_TOKENS_FOR_PRESALE = 300_000_000 * 10**18;  // 300 million
 
-    /// @dev The ERC20 token contract for Black(BLK).
+    /// @notice The ERC20 token contract for Black(BLK).
     IERC20 public black;
 
-    /// @dev The price per token in ETH.
+    /// @notice The price per token in ETH.
     uint256 public tokenPrice;
 
-    /// @dev The total number of tokens sold during the presale.
+    /// @notice The total number of tokens sold during the presale.
     uint256 public tokensSold;
 
-    /// @dev The start time of the presale.
+    /// @notice The start time of the presale.
     uint256 public presaleStartTime;
 
-    /// @dev The end time of the presale.
+    /// @notice The end time of the presale.
     uint256 public presaleEndTime;
 
-    /// @dev The duration of the vesting cliff (in days).
+    /// @notice The duration of the vesting cliff (in days).
     uint256 public vestingCliffDuration = 90 days;  // 3 months cliff after presale ends
 
-    /// @dev The duration of the vesting period after the cliff (in days).
+    /// @notice The duration of the vesting period after the cliff (in days).
     uint256 public vestingDuration = 365 days;  // 12 months vesting after the cliff
 
-    /// @dev The address where funds (ETH) from the presale are withdrawn to.
+    /// @notice The address where funds (ETH) from the presale are withdrawn to.
     address public coldWallet;
 
-    /// @dev Struct representing an investor's contribution and token details.
+    /// @notice Struct representing an investor's contribution and token details.
     struct Investor {
         uint256 amountContributed;  // Total ETH contributed by the investor
         uint256 totalTokens;        // Total tokens the investor is entitled to
@@ -45,42 +45,46 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
         uint256 vestingStartTime;   // Time at which the investor's vesting starts
     }
 
-    /// @dev Mapping of addresses to their corresponding Investor details.
+    /// @notice Mapping of addresses to their corresponding Investor details.
     mapping(address => Investor) public investors;
 
-    /// @dev Emitted when the cold wallet address is updated.
-    event ColdWalletUpdated(address indexed _coldWallet);
 
-    /// @dev Emitted when funds are withdrawn from the contract to the cold wallet.
-    event FundsWithdrawn(address indexed _coldWallet, uint256 indexed _amount);
-
-    /// @dev Emitted when tokens are purchased during the presale.
-    event TokensPurchased(address indexed _buyer, uint256 indexed _amountETH, uint256 indexed _amountTokens);
-
-    /// @dev Emitted when an investor claims tokens after the presale.
-    event TokensClaimed(address indexed _investor, uint256 indexed _tokensClaimed);
-
-    /// @dev Emitted when the presale end time is updated.
-    event PresaleEndTimeUpdated(uint256 indexed _endTime);
-
-    /// @dev Emitted when the vesting cliff duration is updated.
-    event CliffDurationUpdated(uint256 indexed _cliffDuration);
-
-    /// @dev Emitted when the vesting duration is updated.
-    event VestingDurationUpdated(uint256 indexed _vestingDuration);
-
-    /// @dev Emitted when the token price is updated.
-    event TokenPriceUpdated(uint256 indexed _tokenPrice);
-
-    /// @dev Emitted when the presale is finalized.
-    event PresaleFinalized(uint256 indexed _timestamp);
-
-    /// @dev Emitted when an investor's vesting starts.
+    /// @notice Emitted when an investor's vesting starts.
     event VestingStarted(address indexed _investor, uint256 indexed _startTime);
 
-    /// @dev Emitted when an investor has claimed all their vested tokens.
-    event VestingCompleted(address indexed investor);
+    /// @notice Emitted when tokens are purchased during the presale.
+    event TokensPurchased(address indexed _buyer, uint256 indexed _amountETH, uint256 indexed _amountTokens);
 
+    /// @notice Emitted when an investor claims tokens after the presale.
+    event TokensClaimed(address indexed _investor, uint256 indexed _tokensClaimed);
+
+    /// @notice Emitted when an investor has claimed all their vested tokens.
+    event VestingCompleted(address indexed _investor);
+
+    /// @notice Emitted when funds are withdrawn from the contract to the cold wallet.
+    event FundsWithdrawn(address indexed _coldWallet, uint256 indexed _amount);
+
+    /// @notice Emitted when the Black tokens are rescued from the contract to the cold wallet.
+    event TokensRescued(address indexed _coldWallet, uint256 indexed _amount);
+
+    /// @notice Emitted when the presale is finalized.
+    event PresaleFinalized(uint256 indexed _timestamp);
+
+    /// @notice Emitted when the presale end time is updated.
+    event PresaleEndTimeUpdated(uint256 indexed _endTime);
+
+    /// @notice Emitted when the vesting cliff duration is updated.
+    event CliffDurationUpdated(uint256 indexed _cliffDuration);
+
+    /// @notice Emitted when the vesting duration is updated.
+    event VestingDurationUpdated(uint256 indexed _vestingDuration);
+
+    /// @notice Emitted when the token price is updated.
+    event TokenPriceUpdated(uint256 indexed _tokenPrice);
+
+    /// @notice Emitted when the cold wallet address is updated.
+    event ColdWalletUpdated(address indexed _coldWallet);
+    
 
     /// @dev Disables the initialization for implementation contract.
     constructor() {
@@ -181,9 +185,24 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
         uint256 balance = address(this).balance;
         require(balance > 0, "No ETH to withdraw");
             
-        payable(coldWallet).transfer(balance);
+        (bool success, ) = payable(coldWallet).call{value: balance}("");
+        require(success, "ETH transfer failed");
 
         emit FundsWithdrawn(coldWallet, balance);
+    }
+
+    /// @notice Allows the owner to withdraw Black tokens held by this contract.
+    /// @param _amount The number of tokens to transfer.
+    function rescueTokens(uint256 _amount) external onlyOwner {
+        require(coldWallet != address(0), "Cold wallet address is not set");
+
+        uint256 contractBalance = black.balanceOf(address(this));
+        require(_amount <= contractBalance, "Not enough tokens in the contract");
+
+        bool success = black.transfer(coldWallet, _amount);
+        require(success, "Transfer failed");
+
+        emit TokensRescued(coldWallet, _amount);
     }
 
     /// @notice Finalizes the presale by setting the end time to the current block timestamp.
