@@ -7,16 +7,19 @@ import "@openzeppelin-contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin-contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 /// @title Presale contract
-/// @notice This contract handles the presale for Black(BLK) where users can purchase tokens with ETH, and the tokens are subject to a vesting period after the presale ends.
+/// @notice This contract handles the presale for Black(BLK) where users can purchase tokens with USDC, and the tokens are subject to a vesting period after the presale ends.
 contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeable {
 
     /// @notice The maximum number of tokens available for presale (300 million Black(BLK)).
     uint256 public constant MAX_TOKENS_FOR_PRESALE = 300_000_000 * 10**18;  // 300 million
 
+    /// @notice The USDC token contract.
+    IERC20 public constant USDC = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+
     /// @notice The ERC20 token contract for Black(BLK).
     IERC20 public black;
 
-    /// @notice The price per token in ETH.
+    /// @notice The price per token in USDC.
     uint256 public tokenPrice;
 
     /// @notice The total number of tokens sold during the presale.
@@ -34,12 +37,12 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
     /// @notice The duration of the vesting period after the cliff (in days).
     uint256 public vestingDuration = 365 days;  // 12 months vesting after the cliff
 
-    /// @notice The address where funds (ETH) from the presale are withdrawn to.
+    /// @notice The address where funds (USDC) from the presale are withdrawn to.
     address public coldWallet;
 
     /// @notice Struct representing an investor's contribution and token details.
     struct Investor {
-        uint256 amountContributed;  // Total ETH contributed by the investor
+        uint256 amountContributed;  // Total USDC contributed by the investor
         uint256 totalTokens;        // Total tokens the investor is entitled to
         uint256 tokensClaimed;      // Tokens already claimed by the investor
         uint256 vestingStartTime;   // Time at which the investor's vesting starts
@@ -53,7 +56,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
     event VestingStarted(address indexed _investor, uint256 indexed _startTime);
 
     /// @notice Emitted when tokens are purchased during the presale.
-    event TokensPurchased(address indexed _buyer, uint256 indexed _amountETH, uint256 indexed _amountTokens);
+    event TokensPurchased(address indexed _buyer, uint256 indexed _amountUSDC, uint256 indexed _amountTokens);
 
     /// @notice Emitted when an investor claims tokens after the presale.
     event TokensClaimed(address indexed _investor, uint256 indexed _tokensClaimed);
@@ -93,7 +96,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
 
     /// @notice Initializes the contract with the address of the Black token and the initial token price.
     /// @param _black The address of the Black token contract.
-    /// @param _tokenPrice The initial price of each token in ETH.
+    /// @param _tokenPrice The initial price of each token in USDC.
     function initialize(address _black, uint256 _tokenPrice) public initializer {
         require(_black != address(0), "Invalid address");
 
@@ -106,24 +109,25 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
         presaleEndTime = presaleStartTime + 90 days;  // Presale duration is 90 days
     }
 
-    /// @notice Allows users to purchase tokens during the presale.
+    /// @notice Allows users to purchase tokens during the presale period using USDC.
     /// @param _tokensToBuy The number of tokens the user wants to purchase.
     /// @dev Only active during the presale period. Tokens are held in the contract and not immediately claimable.
     /// Vesting begins only after the cliff duration ends, which starts counting from the time of purchase.
-    function purchaseTokens(uint256 _tokensToBuy) external payable whenNotPaused {
+    function purchaseTokens(uint256 _tokensToBuy) external whenNotPaused {
         require(block.timestamp >= presaleStartTime && block.timestamp <= presaleEndTime, "Presale not active");
-        require(_tokensToBuy >= 1 * 10**18, "Minimum purchase requirement: 1 BLK");
-        require(msg.value == (_tokensToBuy * tokenPrice) / 1e18, "Incorrect ETH sent for token amount");
-
+        require(_tokensToBuy >= 1 * 1e18, "Minimum purchase requirement: 1 BLK");
         require(tokensSold + _tokensToBuy <= MAX_TOKENS_FOR_PRESALE, "Not enough tokens left for presale");
         require(tokensSold + _tokensToBuy <= black.balanceOf(address(this)), "Not enough tokens available in the contract");
+
+        uint256 usdcAmount = (tokenPrice * _tokensToBuy) / 1e18; 
+        USDC.transferFrom(msg.sender, address(this), usdcAmount);
 
         // Update tokens sold
         tokensSold = tokensSold + _tokensToBuy;
 
         // Record investor details
         Investor storage investor = investors[msg.sender];
-        investor.amountContributed = investor.amountContributed + msg.value;
+        investor.amountContributed = investor.amountContributed + usdcAmount;
         investor.totalTokens = investor.totalTokens + _tokensToBuy;
 
         // Set vesting start time if it's the first purchase
@@ -133,7 +137,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
             emit VestingStarted(msg.sender, block.timestamp);
         }
 
-        emit TokensPurchased(msg.sender, msg.value, _tokensToBuy);
+        emit TokensPurchased(msg.sender, usdcAmount, _tokensToBuy);
     }
 
     /// @notice Allows investors to claim their vested tokens after the presale ends.
@@ -178,15 +182,16 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
         return vestingAmount > investor.totalTokens ? investor.totalTokens : vestingAmount;
     }
 
-    /// @notice Allows the owner to withdraw the ETH balance of the contract to a cold wallet address.
+    /// @notice Allows the owner to withdraw the USDC balance of the contract to the cold wallet address.
     /// @dev Only the owner can withdraw the funds. The cold wallet address must be set.
     function withdrawFunds() external onlyOwner {
         require(coldWallet != address(0), "Cold wallet address is not set");
-        uint256 balance = address(this).balance;
-        require(balance > 0, "No ETH to withdraw");
+        
+        uint256 balance = USDC.balanceOf(address(this));
+        require(balance > 0, "No USDC to withdraw");
             
-        (bool success, ) = payable(coldWallet).call{value: balance}("");
-        require(success, "ETH transfer failed");
+        bool success = USDC.transfer(coldWallet, balance);
+        require(success, "Failed to withdraw USDC");
 
         emit FundsWithdrawn(coldWallet, balance);
     }
@@ -240,7 +245,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
     }
 
     /// @notice Allows the owner to update the token price.
-    /// @param _tokenPrice The new token price in ETH.
+    /// @param _tokenPrice The new token price in USDC.
     function updateTokenPrice(uint256 _tokenPrice) external onlyOwner {
         require(_tokenPrice > 0, "Price must be greater than 0");
         tokenPrice = _tokenPrice;
@@ -248,7 +253,7 @@ contract Presale is UUPSUpgradeable, PausableUpgradeable, Ownable2StepUpgradeabl
         emit TokenPriceUpdated(_tokenPrice);
     }
 
-    /// @notice Allows the owner to set the cold wallet address for ETH withdrawals.
+    /// @notice Allows the owner to set the cold wallet address for USDC withdrawals.
     /// @param _coldWallet The address of the cold wallet.
     function setColdWallet(address _coldWallet) external onlyOwner {
         require(_coldWallet != address(0), "Cold wallet address cannot be zero");
